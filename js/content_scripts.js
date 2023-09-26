@@ -6,15 +6,17 @@ function captureVideoImage() {
   ctx.drawImage(v, 0, 0, v.videoWidth, v.videoHeight)
   myCanvas.convertToBlob().then(blob => {
     // 将视频帧下载
-    const fileName = 'screenshot.png';
-    const d = document.createElement('a')
-    d.href = window.URL.createObjectURL(blob)
-    d.download = fileName
-    d.style.display = 'none'
-    document.body.appendChild(d)
-    d.click()
-    document.body.removeChild(d)
-    window.URL.revokeObjectURL(d.href)
+    var d = new Date();
+    var timeStr = '' + d.getFullYear() + (d.getMonth() + 1) + d.getDate() + d.getHours() + d.getMinutes() + d.getSeconds();
+    const fileName = 'screenshot-' + timeStr + '.png';
+    const a = document.createElement('a')
+    a.href = window.URL.createObjectURL(blob)
+    a.download = fileName
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(a.href)
   })
 }
 
