@@ -20,7 +20,8 @@
         "type": "module"
     },
     "permissions": [
-        "contextMenus"
+        "contextMenus",
+        "clipboardWrite"
     ],
     "host_permissions": [
         "*://*/*"
