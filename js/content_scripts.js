@@ -139,66 +139,97 @@ function formatVideoTime(seconds) {
   var h = Math.floor(s / 3600);
   var m = Math.floor((s % 3600) / 60);
   var sec = s % 60;
-  if (h > 0) {
-    return h + '_' + String(m).padStart(2, '0') + '_' + String(sec).padStart(2, '0');
-  }
-  return m + '_' + String(sec).padStart(2, '0');
+  return String(h).padStart(2, '0') + '_' + String(m).padStart(2, '0') + '_' + String(sec).padStart(2, '0');
 }
 
 // ============================================================
-// 获取直播间持续时间（从页面 DOM 读取直播计时器）
+// 获取直播间持续时间
+// 1. 从 <script> 标签 DOM 中解析 live_time（精确 Unix 时间戳）
+// 2. 兜底从页面 DOM 扫描 HH:MM:SS
 // ============================================================
 function getLiveDuration() {
-  // 尝试多个已知选择器（覆盖不同B站页面版本）
+  // 方案一：从 <script> 标签文本中解析 live_time
+  try {
+    var scripts = document.querySelectorAll('script');
+    var prefix = 'window.__NEPTUNE_IS_MY_WAIFU__';
+    for (var si = 0; si < scripts.length; si++) {
+      var content = scripts[si].textContent || '';
+      var idx = content.indexOf(prefix);
+      if (idx === -1) continue;
+
+      var eqIdx = content.indexOf('=', idx + prefix.length);
+      if (eqIdx === -1) continue;
+
+      // 手动匹配花括号深度，精确提取 JSON
+      var start = eqIdx + 1;
+      var depth = 0;
+      var inStr = false;
+      for (var ci = start; ci < content.length; ci++) {
+        var ch = content[ci];
+        if (inStr) {
+          if (ch === '\\') { ci++; continue; }
+          if (ch === '"') inStr = false;
+          continue;
+        }
+        if (ch === '"') { inStr = true; continue; }
+        if (ch === '{') depth++;
+        if (ch === '}') {
+          depth--;
+          if (depth === 0) {
+            var data = JSON.parse(content.substring(start, ci + 1));
+            var liveTime = data.roomInitRes && data.roomInitRes.data && data.roomInitRes.data.live_time;
+            if (liveTime && liveTime > 0) {
+              var now = Math.floor(Date.now() / 1000);
+              var secs = now - liveTime;
+              if (secs >= 60 && secs <= 86400) return formatVideoTime(secs);
+            }
+            break;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('getLiveDuration 标签解析失败:', e);
+  }
+
+  // 方案二：兜底从 DOM 扫描 HH:MM:SS
   var selectors = [
-    // 新版直播间：在 header / info 区域
-    ".room-header [class*='time']",
-    ".header-info [class*='time']",
-    ".live-info [class*='time']",
-    "[class*='live-timer']",
     "[class*='live-time']",
+    "[class*='live-timer']",
+    "[class*='room-header'] [class*='time']",
+    "[class*='header-info'] [class*='time']",
+    "[class*='live-status']",
+    "[class*='live-info'] [class*='time']",
     "[class*='timer']",
-    "[class*='duration']",
-    // 直播状态区域
-    ".live-status [class*='time']",
-    "[class*='status'] [class*='time']"
+    "[class*='duration']"
   ];
 
   for (var i = 0; i < selectors.length; i++) {
     var els = document.querySelectorAll(selectors[i]);
     for (var j = 0; j < els.length; j++) {
       var text = els[j].textContent.trim();
-      // 尝试 HH:MM:SS
       var m = text.match(/(\d+):(\d+):(\d+)/);
       if (m) {
         var secs = parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10);
-        if (secs > 0) return formatVideoTime(secs);
-      }
-      // 尝试 MM:SS（分钟数 < 60 避免误匹配非时间文本）
-      var m2 = text.match(/^(\d+):(\d+)$/);
-      if (m2) {
-        var mins = parseInt(m2[1], 10);
-        var secs2 = mins * 60 + parseInt(m2[2], 10);
-        if (mins < 60 && secs2 > 0) return formatVideoTime(secs2);
+        if (secs >= 60 && secs <= 86400) return formatVideoTime(secs);
       }
     }
   }
 
-  // 兜底：在全页面搜索显式的 HH:MM:SS 文本（限定范围避免性能问题）
+  // 全页面兜底扫描
   var allEls = document.querySelectorAll('span, div, p, label');
-  var candidates = [];
+  var best = null;
   for (var i = 0; i < allEls.length; i++) {
     var text = allEls[i].textContent.trim();
-    if (/^\d+:\d+:\d+$/.test(text)) {
-      candidates.push(text);
+    var m = text.match(/(\d+):(\d+):(\d+)/);
+    if (m) {
+      var secs = parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10);
+      if (secs >= 60 && secs <= 86400) {
+        if (best === null || secs < best) best = secs;
+      }
     }
   }
-  // 取最短匹配（持续时间计数器通常是最短的 HH:MM:SS 文本）
-  if (candidates.length > 0) {
-    candidates.sort(function (a, b) { return a.length - b.length; });
-    var parts = candidates[0].split(':');
-    return formatVideoTime(parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseInt(parts[2], 10));
-  }
+  if (best !== null) return formatVideoTime(best);
 
   return null;
 }
