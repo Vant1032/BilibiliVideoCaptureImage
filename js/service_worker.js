@@ -20,7 +20,7 @@ chrome.commands.onCommand.addListener(function (command) {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'capture',
-    title: 'B站视频截图',
+    title: 'B站视频/直播间截图',
     contexts: ['page']
   })
 })

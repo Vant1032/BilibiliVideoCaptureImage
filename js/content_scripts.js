@@ -113,15 +113,26 @@ async function saveToUserDir(blob, fileName) {
 }
 
 // ============================================================
-// 提取 BV 号
+// 页面类型检测
+// ============================================================
+function isLiveRoom() {
+  return window.location.hostname === 'live.bilibili.com';
+}
+
+// ============================================================
+// 提取标识符（视频: BV号 / 直播间: roomId）
 // ============================================================
 function getBvid() {
+  if (isLiveRoom()) {
+    var m = window.location.pathname.match(/^\/(\d+)/);
+    return m ? 'live' + m[1] : 'liveunknown';
+  }
   var m = window.location.pathname.match(/\/video\/(BV[\w]+)/);
   return m ? m[1] : 'unknown';
 }
 
 // ============================================================
-// 格式化视频时间（秒 → 分_秒 / 时_分_秒）
+// 获取视频当前位置描述
 // ============================================================
 function formatVideoTime(seconds) {
   var s = Math.floor(seconds);
@@ -135,18 +146,109 @@ function formatVideoTime(seconds) {
 }
 
 // ============================================================
+// 获取直播间持续时间（从页面 DOM 读取直播计时器）
+// ============================================================
+function getLiveDuration() {
+  // 尝试多个已知选择器（覆盖不同B站页面版本）
+  var selectors = [
+    // 新版直播间：在 header / info 区域
+    ".room-header [class*='time']",
+    ".header-info [class*='time']",
+    ".live-info [class*='time']",
+    "[class*='live-timer']",
+    "[class*='live-time']",
+    "[class*='timer']",
+    "[class*='duration']",
+    // 直播状态区域
+    ".live-status [class*='time']",
+    "[class*='status'] [class*='time']"
+  ];
+
+  for (var i = 0; i < selectors.length; i++) {
+    var els = document.querySelectorAll(selectors[i]);
+    for (var j = 0; j < els.length; j++) {
+      var text = els[j].textContent.trim();
+      // 尝试 HH:MM:SS
+      var m = text.match(/(\d+):(\d+):(\d+)/);
+      if (m) {
+        var secs = parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10);
+        if (secs > 0) return formatVideoTime(secs);
+      }
+      // 尝试 MM:SS（分钟数 < 60 避免误匹配非时间文本）
+      var m2 = text.match(/^(\d+):(\d+)$/);
+      if (m2) {
+        var mins = parseInt(m2[1], 10);
+        var secs2 = mins * 60 + parseInt(m2[2], 10);
+        if (mins < 60 && secs2 > 0) return formatVideoTime(secs2);
+      }
+    }
+  }
+
+  // 兜底：在全页面搜索显式的 HH:MM:SS 文本（限定范围避免性能问题）
+  var allEls = document.querySelectorAll('span, div, p, label');
+  var candidates = [];
+  for (var i = 0; i < allEls.length; i++) {
+    var text = allEls[i].textContent.trim();
+    if (/^\d+:\d+:\d+$/.test(text)) {
+      candidates.push(text);
+    }
+  }
+  // 取最短匹配（持续时间计数器通常是最短的 HH:MM:SS 文本）
+  if (candidates.length > 0) {
+    candidates.sort(function (a, b) { return a.length - b.length; });
+    var parts = candidates[0].split(':');
+    return formatVideoTime(parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseInt(parts[2], 10));
+  }
+
+  return null;
+}
+
+// ============================================================
+// 查找视频元素（支持视频页 + 直播间）
+// ============================================================
+function findVideoElement() {
+  // 优先尝试各选择器（覆盖视频页 & 直播间）
+  var selectors = [
+    ".bpx-player-video-wrap video",     // 视频页
+    ".video-player-mount video",         // 直播间新版
+    ".live-player-mount video",          // 直播间新版备选
+    "#live-player video",                // 直播间经典
+    ".live-video-player video",          // 直播间备选
+    "video[src*='blob']",                // blob 源通用
+    "video"
+  ];
+
+  for (var i = 0; i < selectors.length; i++) {
+    var v = document.querySelector(selectors[i]);
+    if (v) {
+      console.log('找到视频元素，选择器:', selectors[i]);
+      return v;
+    }
+  }
+
+  return null;
+}
+
+// ============================================================
 // 核心：截图 + 保存
 // ============================================================
 async function captureVideoImage() {
-  var v = document.querySelector(".bpx-player-video-wrap video");
+  var v = findVideoElement();
   if (!v) {
     console.error('未找到视频元素');
+    alert('未找到视频元素，请确保您在B站视频或直播间页面');
+    return;
+  }
+
+  if (!v.videoWidth || !v.videoHeight) {
+    console.error('视频尚未加载完成');
+    alert('视频尚未加载完成，请稍后重试');
     return;
   }
 
   var myCanvas = new OffscreenCanvas(v.videoWidth, v.videoHeight);
   var ctx = myCanvas.getContext('2d');
-  ctx.drawImage(v, 0, 0, v.videoWidth, v.videoHeight)
+  ctx.drawImage(v, 0, 0, v.videoWidth, v.videoHeight);
   const blob = await myCanvas.convertToBlob();
 
   // 写入系统剪贴板
@@ -159,10 +261,26 @@ async function captureVideoImage() {
   }
 
   var d = new Date();
-  var timeStr = '' + d.getFullYear() + (d.getMonth() + 1) + d.getDate() + d.getHours() + d.getMinutes() + d.getSeconds();
-  var bvid = getBvid();
-  var pos = formatVideoTime(v.currentTime + 1);
-  const fileName = timeStr + '_' + bvid + '_' + pos + '.png';
+  var timeStr = '' + d.getFullYear() +
+    String(d.getMonth() + 1).padStart(2, '0') +
+    String(d.getDate()).padStart(2, '0') +
+    String(d.getHours()).padStart(2, '0') +
+    String(d.getMinutes()).padStart(2, '0') +
+    String(d.getSeconds()).padStart(2, '0');
+
+  var id = getBvid();
+  var fileName;
+
+  if (isLiveRoom()) {
+    // 直播间：live+roomId_hh_mm_ss_时间戳.png
+    var liveDuration = getLiveDuration();
+    var durStr = liveDuration ? liveDuration + '_' : '';
+    fileName = id + '_' + durStr + timeStr + '.png';
+  } else {
+    // 视频页：BV号_hh_mm_ss_时间戳.png
+    var pos = formatVideoTime(v.currentTime + 1);
+    fileName = id + '_' + pos + '_' + timeStr + '.png';
+  }
 
   // 尝试保存到用户选择的目录
   const saved = await saveToUserDir(blob, fileName);

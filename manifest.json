@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "BilibiliCaptureImage",
-    "version": "1.0.0.0",
-    "description": "capture bilibili current video frame to image",
+    "version": "1.1.0",
+    "description": "截取B站视频/直播间当前帧保存为图片，支持自定义保存目录",
     "icons": {
         "128": "icon/logo-B.png"
     },
@@ -10,7 +10,8 @@
         {
             "matches": [
                 "http://www.bilibili.com/*",
-                "https://www.bilibili.com/*"
+                "https://www.bilibili.com/*",
+                "https://live.bilibili.com/*"
             ],
             "js": ["js/content_scripts.js"]
         }
@@ -24,7 +25,9 @@
         "clipboardWrite"
     ],
     "host_permissions": [
-        "*://www.bilibili.com/*"
+        "*://www.bilibili.com/*",
+        "*://live.bilibili.com/*",
+        "*://player.bilibili.com/*"
     ],
     "commands": {
         "BilibiliCaptureImage": {
@@ -32,7 +35,7 @@
                 "default": "Alt+C",
                 "mac": "Alt+C"
             },
-            "description": "capture bilibili current video frame to image"
+            "description": "截取B站视频/直播间当前帧"
         }
     }
 }
