@@ -11,7 +11,6 @@ function notifyDownload() {
 }
 
 chrome.commands.onCommand.addListener(function (command) {
-  // 按下快捷键则执行视频帧下载
   console.log('Command:', command);
   if (command === 'BilibiliCaptureImage') {
     notifyDownload()
@@ -19,10 +18,9 @@ chrome.commands.onCommand.addListener(function (command) {
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  // 创建右键菜单
   chrome.contextMenus.create({
     id: 'capture',
-    title: 'B站视频截图',
+    title: 'B站视频/直播间截图',
     contexts: ['page']
   })
 })
